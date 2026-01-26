@@ -68,6 +68,9 @@ if page == "Giant Killing Finder":
                     else:
                         st.success(f"Found {len(df)} Giant Killing videos!")
                         
+                        # Add URL column for clickable links
+                        df['url'] = "https://www.youtube.com/watch?v=" + df['video_id']
+
                         # Display Metrics
                         for _, row in df.iterrows():
                             with st.expander(f"{row['title']} (GK Score: {row['gk_score']})"):
@@ -78,12 +81,40 @@ if page == "Giant Killing Finder":
                                     st.markdown(f"**Channel:** {row['channel_title']} ({row['subscriber_count']:,} subs)")
                                     st.markdown(f"**Views:** {row['view_count']:,}")
                                     st.markdown(f"**Published:** {row['published_at']}")
-                                    st.markdown(f"[Watch on YouTube](https://www.youtube.com/watch?v={row['video_id']})")
+                                    st.markdown(f"[Watch on YouTube]({row['url']})")
                                     st.info(f"Tags: {', '.join(row['tags'][:5])}...")
+
+                        # Data Export
+                        st.subheader("Data Export")
+                        col_dl1, col_dl2 = st.columns(2)
+                        
+                        # CSV
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        col_dl1.download_button(
+                            label="Download CSV",
+                            data=csv,
+                            file_name='giant_killing_videos.csv',
+                            mime='text/csv',
+                        )
+                        
+                        # Markdown
+                        md = df.to_markdown(index=False)
+                        col_dl2.download_button(
+                            label="Download Markdown",
+                            data=md,
+                            file_name='giant_killing_videos.md',
+                            mime='text/markdown',
+                        )
 
                         # Raw Data table
                         st.subheader("Raw Data")
-                        st.dataframe(df)
+                        st.dataframe(
+                            df,
+                            column_config={
+                                "url": st.column_config.LinkColumn("Video URL", display_text="Watch Video"),
+                                "thumbnail": st.column_config.ImageColumn("Thumbnail"),
+                            },
+                        )
                         
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
