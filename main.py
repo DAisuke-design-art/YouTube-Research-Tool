@@ -38,19 +38,19 @@ page = st.sidebar.radio("Mode", ["Giant Killing Finder", "Trend Monitor"])
 # --- Helper Function for Date Config ---
 def get_published_after(option):
     today = datetime.now()
-    if option == "Last 1 Year (Recommended)":
+    if option == "直近1年 (推奨)":
         return (today - timedelta(days=365)).isoformat("T") + "Z"
-    elif option == "Last 6 Months":
+    elif option == "直近6ヶ月":
         return (today - timedelta(days=180)).isoformat("T") + "Z"
-    elif option == "Last 3 Months":
+    elif option == "直近3ヶ月":
         return (today - timedelta(days=90)).isoformat("T") + "Z"
-    elif option == "Last 1 Month":
+    elif option == "直近1ヶ月":
         return (today - timedelta(days=30)).isoformat("T") + "Z"
-    else: # All Time
+    else: # 全期間
         return None
 
 if page == "Giant Killing Finder":
-    st.header("Giant Killing Finder 🏹")
+    st.header("ジャイアントキリング発掘 🏹")
     
     # --- Session State Initialization ---
     if 'gk_results' not in st.session_state:
@@ -58,29 +58,63 @@ if page == "Giant Killing Finder":
 
     col1, col2 = st.columns(2)
     with col1:
-        keyword = st.text_input("Search Keyword", placeholder="e.g. 明治 歴史")
+        keyword = st.text_input("検索キーワード", placeholder="例: 明治 歴史")
     with col2:
         date_option = st.selectbox(
-            "Freshness (Published After)", 
-            ["Last 1 Year (Recommended)", "Last 6 Months", "Last 3 Months", "All Time"]
+            "期間指定 (Freshness)", 
+            ["直近1年 (推奨)", "直近6ヶ月", "直近3ヶ月", "全期間"]
         )
         # Convert choice to ISO format
         published_after = get_published_after(date_option)
 
+    col_type, col_dummy = st.columns([1, 1]) 
+    with col_type:
+        video_type_option = st.radio(
+            "動画タイプ",
+            ["通常動画のみ (推奨)", "ショートのみ", "すべて"],
+            horizontal=True
+        )
+        
+        # Map to internal values & Set smart defaults
+        video_type_filter = "all"
+        min_duration_default = 0
+        max_duration_default = 3600 # 1 hour
+        
+        if video_type_option == "通常動画のみ (推奨)":
+            video_type_filter = "long"
+            # Insight: 60s is technically long, but effectively noise. 
+            # Defaulting to 120s (2 mins) to ensure "Research Quality" videos.
+            min_duration_default = 120 
+            max_duration_default = 7200 # 2 hours
+        elif video_type_option == "ショートのみ":
+            video_type_filter = "short"
+            min_duration_default = 0
+            max_duration_default = 60
+
+    # Advanced Filters (Expander)
+    with st.expander("詳細フィルタ (Advanced Filters)", expanded=True):
+         c_dur1, c_dur2 = st.columns(2)
+         with c_dur1:
+             min_duration = st.number_input("最短尺 (秒) - これより短い動画を除外", value=min_duration_default, step=10, help="120秒以上に設定すると、質の低い動画を完全に排除できます。")
+         with c_dur2:
+             # Just a placeholder/display, passing None if easy, but let's pass explicit None if user wants 'Any'
+             # For simplicity, let's keep it basic.
+             pass
+
     col3, col4, col5 = st.columns(3)
     with col3:
-        max_results = st.slider("Max Results to Analyze", 10, 50, 50)
+        max_results = st.slider("分析対象数 (Max Results)", 10, 50, 50)
     with col4:
-        min_views = st.number_input("Min Views", value=10000, step=1000)
+        min_views = st.number_input("最低再生数 (Min Views)", value=10000, step=1000)
     with col5:
-        max_subs = st.number_input("Max Subscribers", value=10000, step=1000)
+        max_subs = st.number_input("最大登録者数 (Max Subscribers)", value=10000, step=1000)
     
     # Search Button
-    if st.button("Search & Analyze"):
+    if st.button("検索 & 分析開始 (Search & Analyze)"):
         if not api_key:
-            st.error("Please provide an API Key to proceed.")
+            st.error("APIキーが設定されていません。")
         else:
-            with st.spinner(f"Searching for '{keyword}' ({date_option}) and analyzing..."):
+            with st.spinner(f"「{keyword}」を検索中... ({date_option}, {video_type_option})"):
                 try:
                     analyzer = YouTubeAnalyzer(api_key)
                     df = analyzer.find_giant_killing_videos(
@@ -88,27 +122,29 @@ if page == "Giant Killing Finder":
                         max_search_results=max_results,
                         min_views=min_views,
                         max_subs=max_subs,
-                        published_after=published_after
+                        published_after=published_after,
+                        video_type_filter=video_type_filter,
+                        min_duration=min_duration
                     )
                     # Save to Session State
                     st.session_state.gk_results = df
                     
                 except Exception as e:
-                    st.error(f"An error occurred: {e}")
+                    st.error(f"エラーが発生しました: {e}")
 
     # --- Display Results from Session State ---
     if st.session_state.gk_results is not None:
         df = st.session_state.gk_results
         
         # Clear Button
-        if st.button("🗑️ Clear Results"):
+        if st.button("🗑️ 結果をクリア"):
              st.session_state.gk_results = None
              st.rerun()
 
         if df.empty:
-            st.warning("No videos found matching the criteria. Try loosening the filters or increasing search results.")
+            st.warning("条件に合う動画が見つかりませんでした。条件を緩めるか、検索数を増やしてみてください。")
         else:
-            st.success(f"Found {len(df)} Giant Killing videos!")
+            st.success(f"お宝動画を {len(df)} 件発見しました！")
             
             # Add URL column for clickable links (if not already there)
             if 'url' not in df.columns:
@@ -116,25 +152,27 @@ if page == "Giant Killing Finder":
 
             # Display Metrics
             for _, row in df.iterrows():
-                with st.expander(f"{row['title']} (GK Score: {row['gk_score']})"):
+                with st.expander(f"{row['title']} (GKスコア: {row['gk_score']})"):
                     c1, c2 = st.columns([1, 2])
                     with c1:
                         st.image(row['thumbnail'])
                     with c2:
-                        st.markdown(f"**Channel:** {row['channel_title']} ({row['subscriber_count']:,} subs)")
-                        st.markdown(f"**Views:** {row['view_count']:,}")
-                        st.markdown(f"**Published:** {row['published_at']}")
-                        st.markdown(f"[Watch on YouTube]({row['url']})")
-                        st.info(f"Tags: {', '.join(row['tags'][:5])}...")
+                        st.markdown(f"**チャンネル:** {row['channel_title']} ({row['subscriber_count']:,} 人)")
+                        st.markdown(f"**再生数:** {row['view_count']:,} 回")
+                        st.markdown(f"**投稿日:** {row['published_at']}")
+                        st.markdown(f"**動画タイプ:** {'Shorts (≦60s)' if row.get('duration_sec', 0) <= 60 else 'Video'}")
+                        st.markdown(f"[YouTubeで見る]({row['url']})")
+                        if 'tags' in row and row['tags']:
+                             st.info(f"タグ: {', '.join(row['tags'][:5])}...")
 
             # Data Export
-            st.subheader("Data Export")
+            st.subheader("データ出力 (Data Export)")
             col_dl1, col_dl2 = st.columns(2)
             
             # CSV
             csv = df.to_csv(index=False).encode('utf-8')
             col_dl1.download_button(
-                label="Download CSV",
+                label="CSVでダウンロード",
                 data=csv,
                 file_name='giant_killing_videos.csv',
                 mime='text/csv',
@@ -143,14 +181,14 @@ if page == "Giant Killing Finder":
             # Markdown
             md = df.to_markdown(index=False)
             col_dl2.download_button(
-                label="Download Markdown",
+                label="Markdownでダウンロード",
                 data=md,
                 file_name='giant_killing_videos.md',
                 mime='text/markdown',
             )
 
             # Raw Data table
-            st.subheader("Raw Data")
+            st.subheader("生データ (Raw Data)")
             st.dataframe(
                 df,
                 column_config={
@@ -160,5 +198,5 @@ if page == "Giant Killing Finder":
             )
             
 elif page == "Trend Monitor":
-    st.header("Trend Monitor 📈")
-    st.info("Coming soon in the next update!")
+    st.header("トレンド監視 (Trend Monitor) 📈")
+    st.info("次回のアップデートで実装予定です！")
