@@ -7,7 +7,7 @@ class YouTubeAnalyzer:
         self.client = YouTubeClient(api_key)
         self.logger = logging.getLogger(__name__)
 
-    def find_giant_killing_videos(self, query, max_search_results=50, min_views=10000, max_subs=10000):
+    def find_giant_killing_videos(self, query, max_search_results=50, min_views=10000, max_subs=10000, published_after=None):
         """
         Orchestrates the search and analysis flow.
         1. Search videos
@@ -16,7 +16,7 @@ class YouTubeAnalyzer:
         4. Calculate metrics and filter
         """
         # 1. Search
-        videos = self.client.search_videos(query, max_results=max_search_results)
+        videos = self.client.search_videos(query, max_results=max_search_results, published_after=published_after)
         if not videos:
             return pd.DataFrame()
         
