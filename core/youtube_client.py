@@ -7,19 +7,30 @@ class YouTubeClient:
         self.youtube = build('youtube', 'v3', developerKey=api_key)
         self.logger = logging.getLogger(__name__)
 
-    def search_videos(self, query, max_results=50, published_after=None):
+    def search_videos(self, query, max_results=50, published_after=None, video_category_id=None, video_duration=None, order='viewCount', region_code=None, relevance_language=None):
         """
-        Search for videos by keyword.
+        Search for videos by keyword with advanced filters.
+        video_duration: 'any', 'long', 'medium', 'short'
         """
         try:
-            search_response = self.youtube.search().list(
-                q=query,
-                type='video',
-                part='id,snippet',
-                maxResults=max_results,
-                order='viewCount', # Get popular videos first to filter down
-                publishedAfter=published_after
-            ).execute()
+            kwargs = {
+                'q': query,
+                'type': 'video',
+                'part': 'id,snippet',
+                'maxResults': max_results,
+                'order': order,
+                'publishedAfter': published_after
+            }
+            if region_code:
+                kwargs['regionCode'] = region_code
+            if relevance_language:
+                kwargs['relevanceLanguage'] = relevance_language
+            if video_category_id:
+                kwargs['videoCategoryId'] = video_category_id
+            if video_duration:
+                kwargs['videoDuration'] = video_duration
+
+            search_response = self.youtube.search().list(**kwargs).execute()
             
             videos = []
             for search_result in search_response.get('items', []):
@@ -102,38 +113,51 @@ class YouTubeClient:
     def get_most_popular(self, region_code='JP', video_category_id=None, max_results=50):
         """
         Get most popular videos for a specific region and category.
+        Supports pagination to fetch more than 50 videos.
         """
+        videos = []
+        next_page_token = None
+        
         try:
-            kwargs = {
-                'part': 'snippet,contentDetails,statistics',
-                'chart': 'mostPopular',
-                'regionCode': region_code,
-                'maxResults': max_results
-            }
-            if video_category_id:
-                kwargs['videoCategoryId'] = video_category_id
-
-            response = self.youtube.videos().list(**kwargs).execute()
-            
-            videos = []
-            for item in response.get('items', []):
-                # Structure similar to what we get from search + get_video_details
-                # But here we have everything in one object
-                videos.append({
-                    'video_id': item['id'],
-                    'title': item['snippet']['title'],
-                    'channel_id': item['snippet']['channelId'],
-                    'channel_title': item['snippet']['channelTitle'],
-                    'published_at': item['snippet']['publishedAt'],
-                    'thumbnail': item['snippet']['thumbnails'].get('high', {}).get('url'),
-                    'view_count': int(item['statistics'].get('viewCount', 0)),
-                    'like_count': int(item['statistics'].get('likeCount', 0)),
-                    'comment_count': int(item['statistics'].get('commentCount', 0)),
-                    'duration': item['contentDetails'].get('duration'),
-                    'tags': item['snippet'].get('tags', [])
-                })
-            return videos
-
+            while len(videos) < max_results:
+                # Calculate how many to fetch in this valid batch (max 50 per request)
+                remaining = max_results - len(videos)
+                batch_size = min(remaining, 50)
+                
+                kwargs = {
+                    'part': 'snippet,contentDetails,statistics',
+                    'chart': 'mostPopular',
+                    'regionCode': region_code,
+                    'maxResults': batch_size
+                }
+                if video_category_id:
+                    kwargs['videoCategoryId'] = video_category_id
+                if next_page_token:
+                    kwargs['pageToken'] = next_page_token
+    
+                response = self.youtube.videos().list(**kwargs).execute()
+                
+                for item in response.get('items', []):
+                    videos.append({
+                        'video_id': item['id'],
+                        'title': item['snippet']['title'],
+                        'channel_id': item['snippet']['channelId'],
+                        'channel_title': item['snippet']['channelTitle'],
+                        'published_at': item['snippet']['publishedAt'],
+                        'thumbnail': item['snippet']['thumbnails'].get('high', {}).get('url'),
+                        'view_count': int(item['statistics'].get('viewCount', 0)),
+                        'like_count': int(item['statistics'].get('likeCount', 0)),
+                        'comment_count': int(item['statistics'].get('commentCount', 0)),
+                        'duration': item['contentDetails'].get('duration'),
+                        'tags': item['snippet'].get('tags', [])
+                    })
+                
+                next_page_token = response.get('nextPageToken')
+                if not next_page_token:
+                    break
+                    
         except HttpError as e:
             self.logger.error(f"Error fetching popular videos: {e}")
-            return []
+            
+        return videos
+
