@@ -117,3 +117,58 @@ class YouTubeAnalyzer:
         filtered_df = filtered_df.sort_values(by='gk_score', ascending=False)
         
         return filtered_df
+
+    def get_trend_videos(self, category_id=None, max_results=50, region_code='JP'):
+        """
+        Fetch trending videos and enrich with channel stats.
+        """
+        videos = self.client.get_most_popular(region_code=region_code, video_category_id=category_id, max_results=max_results)
+        if not videos:
+            return pd.DataFrame()
+
+        channel_ids = [v['channel_id'] for v in videos]
+        channel_stats = self.client.get_channel_details(channel_ids)
+
+        results = []
+        for v in videos:
+            cid = v['channel_id']
+            c_stat = channel_stats.get(cid, {})
+            
+            # Parse Duration for display if needed
+            duration_iso = v.get('duration')
+            duration_seconds = 0
+            if duration_iso:
+                try:
+                    duration_seconds = isodate.parse_duration(duration_iso).total_seconds()
+                except:
+                    pass
+
+            view_count = v.get('view_count', 0)
+            sub_count = c_stat.get('subscriber_count', 0)
+            
+            gk_score = 0
+            if sub_count > 0:
+                gk_score = view_count / sub_count
+            elif sub_count == 0 and view_count > 0:
+                gk_score = 999 
+
+            data = {
+                'title': v['title'],
+                'video_id': v['video_id'],
+                'channel_title': v['channel_title'],
+                'channel_id': cid,
+                'published_at': v['published_at'],
+                'thumbnail': v['thumbnail'],
+                'view_count': view_count,
+                'like_count': v.get('like_count', 0),
+                'comment_count': v.get('comment_count', 0),
+                'subscriber_count': sub_count,
+                'video_count': c_stat.get('video_count', 0),
+                'tags': v.get('tags', []),
+                'gk_score': round(gk_score, 2),
+                'duration_sec': duration_seconds
+            }
+            results.append(data)
+
+        df = pd.DataFrame(results)
+        return df

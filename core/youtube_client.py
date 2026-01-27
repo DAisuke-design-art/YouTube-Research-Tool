@@ -98,3 +98,42 @@ class YouTubeClient:
                 self.logger.error(f"Error fetching channel details: {e}")
                 
         return channel_stats
+
+    def get_most_popular(self, region_code='JP', video_category_id=None, max_results=50):
+        """
+        Get most popular videos for a specific region and category.
+        """
+        try:
+            kwargs = {
+                'part': 'snippet,contentDetails,statistics',
+                'chart': 'mostPopular',
+                'regionCode': region_code,
+                'maxResults': max_results
+            }
+            if video_category_id:
+                kwargs['videoCategoryId'] = video_category_id
+
+            response = self.youtube.videos().list(**kwargs).execute()
+            
+            videos = []
+            for item in response.get('items', []):
+                # Structure similar to what we get from search + get_video_details
+                # But here we have everything in one object
+                videos.append({
+                    'video_id': item['id'],
+                    'title': item['snippet']['title'],
+                    'channel_id': item['snippet']['channelId'],
+                    'channel_title': item['snippet']['channelTitle'],
+                    'published_at': item['snippet']['publishedAt'],
+                    'thumbnail': item['snippet']['thumbnails'].get('high', {}).get('url'),
+                    'view_count': int(item['statistics'].get('viewCount', 0)),
+                    'like_count': int(item['statistics'].get('likeCount', 0)),
+                    'comment_count': int(item['statistics'].get('commentCount', 0)),
+                    'duration': item['contentDetails'].get('duration'),
+                    'tags': item['snippet'].get('tags', [])
+                })
+            return videos
+
+        except HttpError as e:
+            self.logger.error(f"Error fetching popular videos: {e}")
+            return []

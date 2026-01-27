@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from dotenv import load_dotenv
+import plotly.express as px
 from core.analyzer import YouTubeAnalyzer
 from datetime import datetime, timedelta
 
@@ -146,6 +147,41 @@ if page == "Giant Killing Finder":
         else:
             st.success(f"お宝動画を {len(df)} 件発見しました！")
             
+            # --- Opportunity Map (Scatter Plot) ---
+            st.subheader("市場分析マップ (Opportunity Map) 🗺️")
+            st.markdown("縦軸が高いほど**需要（再生数）**があり、左にあるほど**ライバル不在（低登録者）**です。")
+            st.markdown("つまり、**左上**にある動画ほど「お宝（Giant Killing）」です。")
+            
+            # Create Scatter Plot
+            # log_x=True helps visualize subscribers better as they vary widely
+            fig = px.scatter(
+                df,
+                x="subscriber_count",
+                y="view_count",
+                size="gk_score",
+                color="gk_score",
+                hover_name="title",
+                hover_data={
+                    "channel_title": True,
+                    "published_at": True,
+                    "view_count": ":,",
+                    "subscriber_count": ":,",
+                    "gk_score": True,
+                    "video_id": False # Hide ID
+                },
+                labels={
+                    "subscriber_count": "チャンネル登録者数 (Subscribers)",
+                    "view_count": "再生回数 (Views)",
+                    "gk_score": "GKスコア"
+                },
+                title="Giant Killing Opportunity Map",
+                color_continuous_scale="Viridis", # or "Plasma", "Turbo"
+                log_x=True, # Log scale for subscribers often makes sense
+                log_y=True  # Log scale for views too
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            # --------------------------------------
+
             # Add URL column for clickable links (if not already there)
             if 'url' not in df.columns:
                  df['url'] = "https://www.youtube.com/watch?v=" + df['video_id']
@@ -199,4 +235,68 @@ if page == "Giant Killing Finder":
             
 elif page == "Trend Monitor":
     st.header("トレンド監視 (Trend Monitor) 📈")
-    st.info("次回のアップデートで実装予定です！")
+    
+    # Category Map (Partial list of popular categories)
+    # Source: https://gist.github.com/dgp/1b24bf2961521bd75d6c
+    CATEGORIES = {
+        "All (すべて)": None,
+        "Film & Animation (映画とアニメ)": "1",
+        "Autos & Vehicles (自動車と乗り物)": "2",
+        "Music (音楽)": "10",
+        "Pets & Animals (ペットと動物)": "15",
+        "Sports (スポーツ)": "17",
+        "Travel & Events (旅行とイベント)": "19",
+        "Gaming (ゲーム)": "20",
+        "People & Blogs (ブログ)": "22",
+        "Comedy (コメディ)": "23",
+        "Entertainment (エンタメ)": "24",
+        "News & Politics (ニュースと政治)": "25",
+        "Howto & Style (ハウツーとスタイル)": "26",
+        "Education (教育)": "27",
+        "Science & Technology (科学と技術)": "28",
+    }
+    
+    col_cat, col_btn = st.columns([3, 1])
+    with col_cat:
+        selected_category_name = st.selectbox("カテゴリ選択 (Category)", options=list(CATEGORIES.keys()))
+        selected_category_id = CATEGORIES[selected_category_name]
+    
+    with col_btn:
+        st.write("") # Spacer
+        st.write("") # Spacer
+        tm_search = st.button("トレンド取得 (Fetch Trends)")
+
+    if tm_search:
+        if not api_key:
+            st.error("APIキーが設定されていません。")
+        else:
+            with st.spinner("急上昇データを取得中..."):
+                try:
+                    analyzer = YouTubeAnalyzer(api_key)
+                    # We can reuse the analyzer since we added the method there
+                    df_trend = analyzer.get_trend_videos(category_id=selected_category_id)
+                    
+                    if df_trend.empty:
+                        st.warning("データが取得できませんでした。時間をおいて試してください。")
+                    else:
+                        st.success(f"{len(df_trend)} 件のトレンド動画を取得しました！")
+                        
+                        # Add URL
+                        if 'url' not in df_trend.columns:
+                            df_trend['url'] = "https://www.youtube.com/watch?v=" + df_trend['video_id']
+
+                        # Display
+                        for _, row in df_trend.iterrows():
+                            # Highlight logic? Maybe
+                            with st.expander(f"{row['title']} (再生: {row['view_count']:,})"):
+                                c1, c2 = st.columns([1, 2])
+                                with c1:
+                                    st.image(row['thumbnail'])
+                                with c2:
+                                    st.markdown(f"**チャンネル:** {row['channel_title']} ({row['subscriber_count']:,} 人)")
+                                    st.markdown(f"**再生数:** {row['view_count']:,} 回")
+                                    st.markdown(f"**投稿日:** {row['published_at']}")
+                                    st.markdown(f"**GKスコア:** {row['gk_score']}")
+                                    st.markdown(f"[YouTubeで見る]({row['url']})")
+                except Exception as e:
+                    st.error(f"エラーが発生しました: {e}")
