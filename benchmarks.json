@@ -1,0 +1,54 @@
+[
+  {
+    "name": "日本のリアル",
+    "channel_id": "",
+    "url": "",
+    "category": "Overseas Reaction / B-Class Gourmet",
+    "reference_video": {
+      "title": "【海外の反応】日本のアレが英国上陸!!...",
+      "url": "https://www.youtube.com/watch?v=E13e0zA4rnc",
+      "gk_score": 23.22
+    },
+    "notes": "B級グルメ、屋台ネタで英国の反応を取り上げている。海外視点の日本食コンテンツとしてベンチマーク。"
+  },
+  {
+    "name": "さくらの暮らし",
+    "channel_id": "",
+    "url": "",
+    "category": "Lifestyle / Cooking",
+    "reference_video": {
+      "title": "【冷凍作り置き】朝ごはんにぴったり☀️ワンオペに備えてストック作り",
+      "url": "https://www.youtube.com/watch?v=CR1gFsMhamI",
+      "gk_score": 78.95
+    },
+    "notes": "「味噌玉」などの時短・作り置きテクニック。歴史的な「兵糧」や「保存食」の現代版として参考になる。"
+  },
+  {
+    "name": "民藝舎 -mingeisha-",
+    "channel_id": "",
+    "url": "",
+    "category": "History / AI Visualization",
+    "reference_video": {
+      "title": "《狂刃乱麻》幕末の志士をAI映像で完全再現",
+      "url": "https://www.youtube.com/watch?v=V20LkwfxHv8",
+      "gk_score": 354.53
+    },
+    "notes": "AIを用いた高画質な歴史人物再現。ビジュアル品質と「リアルさ」への欲求を満たす競合として重要。"
+  },
+  {
+    "name": "世界史の裏 (想定)",
+    "channel_id": "@sekaishi_ura",
+    "url": "https://www.youtube.com/@sekaishi_ura/",
+    "category": "History / Documentary",
+    "reference_video": null,
+    "notes": "ユーザー指定ベンチマーク。"
+  },
+  {
+    "name": "歴史再現トラベラー",
+    "channel_id": "@歴史再現トラベラー01",
+    "url": "https://www.youtube.com/@%E6%AD%B4%E5%8F%B2%E5%86%8D%E7%8F%BE%E3%83%88%E3%83%A9%E3%83%99%E3%83%A9%E3%83%BC01",
+    "category": "History / Reenactment",
+    "reference_video": null,
+    "notes": "ユーザー指定ベンチマーク。島流しの再現などで人気。"
+  }
+]
