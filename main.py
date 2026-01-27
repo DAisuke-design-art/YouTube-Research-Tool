@@ -188,7 +188,21 @@ if page == "Giant Killing Finder":
 
             # Display Metrics
             for _, row in df.iterrows():
-                with st.expander(f"{row['title']} (GKスコア: {row['gk_score']})"):
+                # Format Duration
+                duration = "N/A"
+                raw_sec = row.get('duration_sec', 0)
+                if raw_sec > 0:
+                    m, s = divmod(int(raw_sec), 60)
+                    h, m = divmod(m, 60)
+                    if h > 0:
+                        duration = f"{h}:{m:02d}:{s:02d}"
+                    else:
+                        duration = f"{m}:{s:02d}"
+
+                # Label
+                label = f"[{duration}] {row['title']} (GKスコア: {row['gk_score']})"
+                
+                with st.expander(label):
                     c1, c2 = st.columns([1, 2])
                     with c1:
                         st.image(row['thumbnail'])
@@ -196,7 +210,7 @@ if page == "Giant Killing Finder":
                         st.markdown(f"**チャンネル:** {row['channel_title']} ({row['subscriber_count']:,} 人)")
                         st.markdown(f"**再生数:** {row['view_count']:,} 回")
                         st.markdown(f"**投稿日:** {row['published_at']}")
-                        st.markdown(f"**動画タイプ:** {'Shorts (≦60s)' if row.get('duration_sec', 0) <= 60 else 'Video'}")
+                        st.markdown(f"**動画時間:** {duration} ({'Shorts' if raw_sec <= 65 else 'Video'})")
                         st.markdown(f"[YouTubeで見る]({row['url']})")
                         if 'tags' in row and row['tags']:
                              st.info(f"タグ: {', '.join(row['tags'][:5])}...")
@@ -209,15 +223,15 @@ if page == "Giant Killing Finder":
             
             # Select and Rename Columns
             columns_map = {
-                "title": "タイトル",
-                "channel_title": "チャンネル名",
-                "view_count": "再生数",
-                "subscriber_count": "登録者数",
-                "gk_score": "GKスコア",
-                "published_at": "投稿日",
-                "duration_sec": "動画時間(秒)",
-                "url": "動画URL",
-                "tags": "タグ",
+                "title": "タイトル(Title)",
+                "channel_title": "チャンネル名(Channel)",
+                "view_count": "再生数(Views)",
+                "subscriber_count": "登録者数(Subscribers)",
+                "gk_score": "GKスコア(再生数÷登録者数_高=企画勝)",
+                "published_at": "投稿日(Published)",
+                "duration_sec": "動画時間_秒(Duration_Sec)",
+                "url": "動画URL(URL)",
+                "tags": "タグ(Tags)",
                 "video_id": "動画ID",
                 "channel_id": "チャンネルID",
                 "like_count": "高評価数",
@@ -287,7 +301,7 @@ elif page == "Trend Monitor":
     st.header("トレンド監視 & 企画発掘 (Trend & Idea Mining) 📈")
     
     # Mode Selection (Tabs)
-    tab_cat, tab_idea = st.tabs(["📊 カテゴリ急上昇 (Category Trends)", "💡 企画キーワード発掘 (Idea Mining)"])
+    tab_idea, tab_cat = st.tabs(["💡 企画キーワード発掘 (Idea Mining)", "📊 カテゴリ急上昇 (Category Trends)"])
 
     # --- TAB 1: Category Trends ---
     with tab_cat:
@@ -320,7 +334,7 @@ elif page == "Trend Monitor":
                 "最小動画時間 (分) - Quality Filter", 
                 min_value=0, 
                 max_value=20, 
-                value=0, 
+                value=5, 
                 step=1,
                 help="指定した分数未満の動画（中途半端な尺）を排除します。推奨: 3〜5分"
             )
@@ -387,9 +401,15 @@ elif page == "Trend Monitor":
                             
                             df_trend_display = df_trend.copy()
                             columns_map = {
-                                "title": "タイトル", "channel_title": "チャンネル名", "view_count": "再生数",
-                                "subscriber_count": "登録者数", "gk_score": "GKスコア", "published_at": "投稿日",
-                                "duration_sec": "動画時間(秒)", "url": "動画URL", "tags": "タグ",
+                                "title": "タイトル(Title)", 
+                                "channel_title": "チャンネル名(Channel)", 
+                                "view_count": "再生数(Views)",
+                                "subscriber_count": "登録者数(Subscribers)", 
+                                "gk_score": "GKスコア(再生数÷登録者数_高=企画勝)", 
+                                "published_at": "投稿日(Published)",
+                                "duration_sec": "動画時間_秒(Duration_Sec)", 
+                                "url": "動画URL(URL)", 
+                                "tags": "タグ(Tags)",
                             }
                             # Cleanup
                             extra_cols = [c for c in df_trend.columns if c in columns_map]
@@ -440,7 +460,7 @@ elif page == "Trend Monitor":
                 "最小動画時間 (分) - Quality Filter", 
                 min_value=0, 
                 max_value=20, 
-                value=0, 
+                value=5, 
                 step=1,
                 help="指定した分数未満の動画を排除します。"
             )
@@ -477,101 +497,121 @@ elif page == "Trend Monitor":
                             st.warning("動画が見つかりませんでした。")
                         else:
                             st.success(f"{len(df_idea)} 件の動画からタグを分析しました！")
-                            
                             # Analyze Tags
                             tag_df = analyzer.analyze_tags(df_idea)
                             
-                            if not tag_df.empty:
-                                st.subheader("🚀 バズるキーワード候補 (Tag Cloud)")
-                                # Bar Chart
-                                fig_tags = px.bar(
-                                    tag_df.head(20), 
-                                    x='count', 
-                                    y='tag', 
-                                    orientation='h',
-                                    title=f"'{idea_keyword}' ({video_type_label}) 頻出タグ Top 20",
-                                    labels={'count': '出現回数', 'tag': 'タグ'},
-                                    height=600
-                                )
-                                fig_tags.update_layout(yaxis={'categoryorder':'total ascending'})
-                                st.plotly_chart(fig_tags, use_container_width=True)
-                                
-                                # Show Tag List
-                                with st.expander("全タグリストを表示"):
-                                    st.dataframe(tag_df)
-                            else:
-                                st.info("タグ情報が取得できませんでした。")
-                            
-                            st.divider()
-                            st.subheader("参考動画リスト (Results)")
-                            
-                            # Add URL if missing
-                            if 'url' not in df_idea.columns:
-                                df_idea['url'] = "https://www.youtube.com/watch?v=" + df_idea['video_id']
+                            # SAVE TO SESSION STATE
+                            st.session_state['im_df_idea'] = df_idea
+                            st.session_state['im_tag_df'] = tag_df
+                            st.session_state['im_keyword'] = idea_keyword
+                            st.session_state['im_type'] = video_type_label
 
-                            for _, row in df_idea.iterrows():
-                                # Format Duration
-                                duration = "N/A"
-                                raw_sec = row['duration_sec']
-                                if raw_sec > 0:
-                                    m, s = divmod(int(raw_sec), 60)
-                                    h, m = divmod(m, 60)
-                                    if h > 0:
-                                        duration = f"{h}:{m:02d}:{s:02d}"
-                                    else:
-                                        duration = f"{m}:{s:02d}"
-
-                                # Create a label for the expander
-                                gk_val = row['gk_score']
-                                prefix = "🔥 " if gk_val >= 10 else ""
-                                # Include Duration and Date in label
-                                date_str = row['published_at'][:10]
-                                label = f"{prefix}[{duration}] {row['title']} (📅 {date_str} | GK: {gk_val} | 👁️ {row['view_count']:,})"
-                                
-                                with st.expander(label):
-                                    c1, c2 = st.columns([1, 2])
-                                    with c1:
-                                        if row['thumbnail']:
-                                            st.image(row['thumbnail'])
-                                    with c2:
-                                        st.markdown(f"**チャンネル:** {row['channel_title']} ({row['subscriber_count']:,} 人)")
-                                        st.markdown(f"**再生数:** {row['view_count']:,} 回")
-                                        st.markdown(f"**投稿日:** {row['published_at']}")
-                                        st.markdown(f"**動画時間:** {duration} ({'Shorts' if raw_sec <= 65 else 'Video'})")
-                                        st.markdown(f"[YouTubeで見る]({row['url']})")
-                                    
-                                    # Tags Display
-                                    if 'tags' in row and isinstance(row['tags'], list) and row['tags']:
-                                        tags_str = ", ".join(row['tags'])
-                                        st.info(f"タグ: {tags_str}")
-                                    else:
-                                        st.caption("タグ情報なし")
-                            
-                            # --- Data Export (Idea Mining) ---
-                            st.divider()
-                            st.subheader("発掘データ出力 (Data Export)")
-                            
-                            df_idea_display = df_idea.copy()
-                            columns_map_idea = {
-                                "title": "タイトル", "channel_title": "チャンネル名", "view_count": "再生数",
-                                "subscriber_count": "登録者数", "gk_score": "GKスコア", "published_at": "投稿日",
-                                "duration_sec": "動画時間(秒)", "url": "動画URL", "tags": "タグ",
-                            }
-                            # Cleanup columns
-                            extra_cols_i = [c for c in df_idea.columns if c in columns_map_idea]
-                            df_idea_display = df_idea_display[extra_cols_i].rename(columns=columns_map_idea)
-                            
-                            # Generate Filename
-                            now_str = datetime.now().strftime('%Y%m%d_%H%M')
-                            safe_kw = idea_keyword.replace(" ", "_").replace("　", "_")
-                            # Prefix IM for Idea Mining
-                            file_base_idea = f"IM_{now_str}_{safe_kw}_{selected_type}"
-                            
-                            # CSV
-                            csv_i = df_idea_display.to_csv(index=False).encode('utf-8_sig')
-                            st.download_button(
-                                "CSVでダウンロード", csv_i, f'{file_base_idea}.csv', 'text/csv'
-                            )
-                            
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"Error during analysis: {e}")
+
+        # DISPLAY RESULTS (Check Session State)
+        if 'im_df_idea' in st.session_state and not st.session_state['im_df_idea'].empty:
+            df_idea = st.session_state['im_df_idea']
+            tag_df = st.session_state['im_tag_df']
+            
+            # Show active result context if it wasn't just searched
+            if not idea_search: 
+                st.info(f"Displaying results for: {st.session_state.get('im_keyword', 'Unknown')} ({st.session_state.get('im_type', 'Unknown')})")
+
+            if not tag_df.empty:
+                st.subheader("🚀 バズるキーワード候補 (Tag Cloud)")
+                # Bar Chart
+                fig_tags = px.bar(
+                    tag_df.head(20), 
+                    x='count', 
+                    y='tag', 
+                    orientation='h',
+                    title=f"'{st.session_state.get('im_keyword')}' 頻出タグ Top 20",
+                    labels={'count': '出現回数', 'tag': 'タグ'},
+                    height=600
+                )
+                fig_tags.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_tags, use_container_width=True)
+                
+                # Show Tag List
+                with st.expander("全タグリストを表示"):
+                                    st.dataframe(tag_df)
+            else:
+                st.info("タグ情報が取得できませんでした。")
+            
+            st.divider()
+            st.subheader("参考動画リスト (Results)")
+            
+            # Add URL if missing
+            if 'url' not in df_idea.columns:
+                df_idea['url'] = "https://www.youtube.com/watch?v=" + df_idea['video_id']
+
+            for _, row in df_idea.iterrows():
+                # Format Duration
+                duration = "N/A"
+                raw_sec = row['duration_sec']
+                if raw_sec > 0:
+                    m, s = divmod(int(raw_sec), 60)
+                    h, m = divmod(m, 60)
+                    if h > 0:
+                        duration = f"{h}:{m:02d}:{s:02d}"
+                    else:
+                        duration = f"{m}:{s:02d}"
+
+                # Create a label for the expander
+                gk_val = row['gk_score']
+                prefix = "🔥 " if gk_val >= 10 else ""
+                # Include Duration and Date in label
+                date_str = row['published_at'][:10]
+                label = f"{prefix}[{duration}] {row['title']} (📅 {date_str} | GK: {gk_val} | 👁️ {row['view_count']:,})"
+                
+                with st.expander(label):
+                    c1, c2 = st.columns([1, 2])
+                    with c1:
+                        if row['thumbnail']:
+                            st.image(row['thumbnail'])
+                    with c2:
+                        st.markdown(f"**チャンネル:** {row['channel_title']} ({row['subscriber_count']:,} 人)")
+                        st.markdown(f"**再生数:** {row['view_count']:,} 回")
+                        st.markdown(f"**投稿日:** {row['published_at']}")
+                        st.markdown(f"**動画時間:** {duration} ({'Shorts' if raw_sec <= 65 else 'Video'})")
+                        st.markdown(f"[YouTubeで見る]({row['url']})")
+                    
+                    # Tags Display
+                    if 'tags' in row and isinstance(row['tags'], list) and row['tags']:
+                        tags_str = ", ".join(row['tags'])
+                        st.info(f"タグ: {tags_str}")
+                    else:
+                        st.caption("タグ情報なし")
+            
+            # --- Data Export (Idea Mining) ---
+            st.divider()
+            st.subheader("発掘データ出力 (Data Export)")
+            
+            df_idea_display = df_idea.copy()
+            columns_map_idea = {
+                "title": "タイトル(Title)", 
+                "channel_title": "チャンネル名(Channel)", 
+                "view_count": "再生数(Views)",
+                "subscriber_count": "登録者数(Subscribers)", 
+                "gk_score": "GKスコア(再生数÷登録者数_高=企画勝)", 
+                "published_at": "投稿日(Published)",
+                "duration_sec": "動画時間_秒(Duration_Sec)", 
+                "url": "動画URL(URL)", 
+                "tags": "タグ(Tags)",
+            }
+            # Cleanup columns
+            extra_cols_i = [c for c in df_idea.columns if c in columns_map_idea]
+            df_idea_display = df_idea_display[extra_cols_i].rename(columns=columns_map_idea)
+            
+            # Generate Filename
+            now_str = datetime.now().strftime('%Y%m%d_%H%M')
+            safe_kw = st.session_state.get('im_keyword', 'result').replace(" ", "_").replace("　", "_")
+            # Prefix IM for Idea Mining
+            file_base_idea = f"IM_{now_str}_{safe_kw}_{st.session_state.get('im_type', 'all')}"
+            
+            # CSV
+            csv_i = df_idea_display.to_csv(index=False).encode('utf-8_sig')
+            st.download_button(
+                "CSVでダウンロード", csv_i, f'{file_base_idea}.csv', 'text/csv'
+            )
