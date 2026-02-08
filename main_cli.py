@@ -135,7 +135,7 @@ def main():
                             max_subs=50000,
                             published_after=get_year_ago_iso(),
                             video_type_filter="long",
-                            min_duration=120
+                            min_duration=300
                         )
                         break # Success
                     except HttpError as e:
@@ -213,7 +213,7 @@ def run_single_search(analyzer, keyword, limit, min_views):
         max_subs=50000, 
         published_after=get_year_ago_iso(),
         video_type_filter="long", 
-        min_duration=120 
+        min_duration=300  
     )
     
     if df.empty:
