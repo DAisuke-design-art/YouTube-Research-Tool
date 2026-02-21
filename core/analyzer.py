@@ -1,22 +1,26 @@
 import pandas as pd
+import re
 from .youtube_client import YouTubeClient
 import logging
 import isodate
 from collections import Counter
+
+# 日本語文字検出パターン（ひらがな・カタカナ・漢字）
+_JAPANESE_PATTERN = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]')
 
 class YouTubeAnalyzer:
     def __init__(self, api_key):
         self.client = YouTubeClient(api_key)
         self.logger = logging.getLogger(__name__)
 
-    def find_giant_killing_videos(self, query, max_search_results=50, min_views=10000, max_subs=10000, published_after=None, video_type_filter='long', min_duration=None, max_duration=None):
+    def find_giant_killing_videos(self, query, max_search_results=50, min_views=10000, max_subs=10000, published_after=None, video_type_filter='long', min_duration=None, max_duration=None, region_code='JP', relevance_language='ja'):
         """
         Orchestrates the search and analysis flow.
         ...
         5. Filter by video type (Shorts vs Long) OR explicit duration
         """
-        # 1. Search
-        videos = self.client.search_videos(query, max_results=max_search_results, published_after=published_after)
+        # 1. Search (n8nワークフローと同一構成: order=viewCount + regionCode + relevanceLanguage)
+        videos = self.client.search_videos(query, max_results=max_search_results, published_after=published_after, region_code=region_code, relevance_language=relevance_language)
         if not videos:
             return pd.DataFrame()
         
@@ -44,25 +48,17 @@ class YouTubeAnalyzer:
                 try:
                     duration_seconds = isodate.parse_duration(duration_iso).total_seconds()
                     
-                    # Explicit Duration Filter (from Slider) overrides/supplements Type Filter
                     if min_duration is not None and duration_seconds < min_duration:
                         continue
                     if max_duration is not None and duration_seconds > max_duration:
                         continue
-                        
-                    # Fallback Type Filter (if no explicit slider used, or complementary)
-                    # We only apply strict default logic if specific sliders aren't controlling it, 
-                    # OR we can treat the "Type" as a preset for the sliders in the UI. 
-                    # For now, let's keep the boolean logic for safety if sliders are default.
-                    
-                    # NOTE: YouTube Shorts can sometimes be slightly over 60s (e.g. 61s). 
-                    # We use 65s as a safe threshold for 'auto' detection.
+
                     is_short = duration_seconds <= 65 
                     
                     if video_type_filter == 'long' and is_short:
-                        continue # Skip Shorts
+                        continue
                     elif video_type_filter == 'short' and not is_short:
-                        continue # Skip Long videos
+                        continue
 
                 except Exception as e:
                     self.logger.warning(f"Failed to parse duration for {vid}: {e}")
@@ -71,16 +67,11 @@ class YouTubeAnalyzer:
             view_count = v_stat.get('view_count', 0)
             sub_count = c_stat.get('subscriber_count', 0)
             
-            # Basic Filtering strictly based on arguments
-            # Note: sub_count 0 means hidden or error, we might want to include or exclude
-            # Here we act permissive if sub_count is 0 but show it. 
-            # But the requirement is "Subs < 10k". 
-            
             gk_score = 0
             if sub_count > 0:
                 gk_score = view_count / sub_count
             elif sub_count == 0 and view_count > 0:
-                gk_score = 999 # Infinitely good if 0 subs? Or hidden. Treat as high.
+                gk_score = 999
             
             data = {
                 'title': v['title'],
@@ -96,10 +87,10 @@ class YouTubeAnalyzer:
                 'video_count': c_stat.get('video_count', 0),
                 'tags': v_stat.get('tags', []),
                 'gk_score': round(gk_score, 2),
-                'duration_sec': duration_seconds if duration_iso else 0 # For reference
+                'duration_sec': duration_seconds if duration_iso else 0
             }
             results.append(data)
-            
+
         df = pd.DataFrame(results)
         
         if df.empty:

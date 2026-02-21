@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import plotly.express as px
 from core.analyzer import YouTubeAnalyzer
+from core.sheet_writer import create_sheet_writer
 from datetime import datetime, timedelta
 
 # Load environment variables
@@ -57,7 +58,7 @@ if page == "Giant Killing Finder":
     if 'gk_results' not in st.session_state:
         st.session_state.gk_results = None
 
-    col1, col2 = st.columns(2)
+    col1, col2, col_region = st.columns([2, 1, 1])
     with col1:
         keyword = st.text_input("検索キーワード", placeholder="例: 明治 歴史")
     with col2:
@@ -67,6 +68,15 @@ if page == "Giant Killing Finder":
         )
         # Convert choice to ISO format
         published_after = get_published_after(date_option)
+    with col_region:
+        region_options = {
+            "🇯🇵 日本 (Japanese)": ("JP", "ja"),
+            "🇺🇸 米国 (English)": ("US", "en"),
+            "🇰🇷 韓国 (Korean)": ("KR", "ko"),
+            "🌍 指定なし (グローバル)": (None, None)
+        }
+        selected_region_label = st.selectbox("検索対象国", list(region_options.keys()))
+        region_code, rel_lang = region_options[selected_region_label]
 
     col_type, col_dummy = st.columns([1, 1]) 
     with col_type:
@@ -106,9 +116,9 @@ if page == "Giant Killing Finder":
     with col3:
         max_results = st.slider("分析対象数 (Max Results)", 10, 50, 50)
     with col4:
-        min_views = st.number_input("最低再生数 (Min Views)", value=10000, step=1000)
+        min_views = st.number_input("最低再生数 (Min Views)", value=0, step=1000)
     with col5:
-        max_subs = st.number_input("最大登録者数 (Max Subscribers)", value=10000, step=1000)
+        max_subs = st.number_input("最大登録者数 (Max Subscribers)", value=100000, step=1000)
     
     # Search Button
     if st.button("検索 & 分析開始 (Search & Analyze)"):
@@ -125,7 +135,9 @@ if page == "Giant Killing Finder":
                         max_subs=max_subs,
                         published_after=published_after,
                         video_type_filter=video_type_filter,
-                        min_duration=min_duration
+                        min_duration=min_duration,
+                        region_code=region_code,
+                        relevance_language=rel_lang
                     )
                     # Save to Session State
                     st.session_state.gk_results = df
@@ -258,7 +270,7 @@ if page == "Giant Killing Finder":
 
             # Data Export
             st.subheader("データ出力 (Data Export)")
-            col_dl1, col_dl2 = st.columns(2)
+            col_dl1, col_dl2, col_sheet = st.columns(3)
             
             # Generate Filename
             now_str = datetime.now().strftime('%Y%m%d_%H%M')
@@ -284,6 +296,22 @@ if page == "Giant Killing Finder":
                 file_name=f'{file_base}.md',
                 mime='text/markdown',
             )
+
+            # Google Sheets
+            if col_sheet.button("Google Sheetsに保存"):
+                with st.spinner("スプレッドシートに書き込み中..."):
+                    try:
+                        writer = create_sheet_writer()
+                        if writer:
+                            success = writer.append_results(df, keyword)
+                            if success:
+                                st.success("Google Sheetsに保存しました！")
+                            else:
+                                st.error("Google Sheetsへの保存に失敗しました。")
+                        else:
+                            st.error("Google Sheetsの設定（.env）が不完全です。")
+                    except Exception as e:
+                        st.error(f"書き込み中にエラーが発生しました: {e}")
 
             # Raw Data table
             st.subheader("生データ (Raw Data)")
@@ -464,6 +492,16 @@ elif page == "Trend Monitor":
                 step=1,
                 help="指定した分数未満の動画を排除します。"
             )
+            
+            # Region Filter for Idea Mining
+            im_region_options = {
+                "🇯🇵 日本 (JP/ja)": ("JP", "ja"),
+                "🇺🇸 米国 (US/en)": ("US", "en"),
+                "🇰🇷 韓国 (KR/ko)": ("KR", "ko"),
+                "🌍 指定なし": (None, None)
+            }
+            im_selected_region = st.selectbox("検索対象国 (Region)", list(im_region_options.keys()))
+            im_region_code, im_rel_lang = im_region_options[im_selected_region]
 
         with col_go:
             st.write("") # Spacer
@@ -490,7 +528,9 @@ elif page == "Trend Monitor":
                             min_views=1000, 
                             max_subs=10000000,
                             video_type_filter=selected_type, # Pass user selection
-                            min_duration=im_min_duration * 60 # Convert min -> sec
+                            min_duration=im_min_duration * 60, # Convert min -> sec
+                            region_code=im_region_code,
+                            relevance_language=im_rel_lang
                         )
                         
                         if df_idea.empty:
@@ -610,8 +650,26 @@ elif page == "Trend Monitor":
             # Prefix IM for Idea Mining
             file_base_idea = f"IM_{now_str}_{safe_kw}_{st.session_state.get('im_type', 'all')}"
             
+            col_id_dl1, col_id_sheet = st.columns(2)
+            
             # CSV
             csv_i = df_idea_display.to_csv(index=False).encode('utf-8_sig')
-            st.download_button(
+            col_id_dl1.download_button(
                 "CSVでダウンロード", csv_i, f'{file_base_idea}.csv', 'text/csv'
             )
+            
+            # Google Sheets
+            if col_id_sheet.button("Google Sheetsに保存", key="btn_sheet_idea"):
+                with st.spinner("スプレッドシートに書き込み中..."):
+                    try:
+                        writer = create_sheet_writer()
+                        if writer:
+                            success = writer.append_results(df_idea, safe_kw)
+                            if success:
+                                st.success("Google Sheetsに保存しました！")
+                            else:
+                                st.error("Google Sheetsへの保存に失敗しました。")
+                        else:
+                            st.error("Google Sheetsの設定（.env）が不完全です。")
+                    except Exception as e:
+                        st.error(f"書き込み中にエラーが発生しました: {e}")

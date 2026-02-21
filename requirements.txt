@@ -5,3 +5,5 @@ python-dotenv
 isodate
 plotly
 tabulate
+gspread
+google-auth

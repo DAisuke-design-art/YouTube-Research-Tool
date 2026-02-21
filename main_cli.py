@@ -4,10 +4,15 @@ import json
 import os
 import sys
 import time
+import logging
 from dotenv import load_dotenv
 from core.analyzer import YouTubeAnalyzer
+from core.sheet_writer import create_sheet_writer
 from datetime import datetime, timedelta
 from googleapiclient.errors import HttpError
+
+# ロギング設定
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 # Load environment variables
 load_dotenv()
@@ -65,6 +70,7 @@ def main():
     parser.add_argument('--keyword', type=str, help='Keyword for single mode')
     parser.add_argument('--limit', type=int, default=3, help='Number of keywords to process in batch mode / Output limit in single mode')
     parser.add_argument('--min_views', type=int, default=3000, help='Minimum views')
+    parser.add_argument('--no-sheet', action='store_true', help='Google Sheets書き込みをスキップ')
     
     args = parser.parse_args()
     
@@ -82,7 +88,8 @@ def main():
         try:
             # Simple single key usage for now
             analyzer = YouTubeAnalyzer(keys[0])
-            run_single_search(analyzer, args.keyword, args.limit, args.min_views)
+            sheet_writer = None if args.no_sheet else create_sheet_writer()
+            run_single_search(analyzer, args.keyword, args.limit, args.min_views, sheet_writer=sheet_writer)
         except Exception as e:
             print(json.dumps({"error": str(e)}))
             sys.exit(1)
@@ -199,12 +206,21 @@ def main():
         save_path = os.path.join(raw_dir, filename)
         save_json_file(save_path, output_data)
         
+        # Google Sheets 書き込み
+        if not args.no_sheet:
+            sheet_writer = create_sheet_writer()
+            if sheet_writer:
+                for kw, vids in results.items():
+                    if isinstance(vids, list) and vids:
+                        df_sheet = pd.DataFrame(vids)
+                        sheet_writer.append_results(df_sheet, kw)
+        
         # Add file path to stdout output for AI to know where it is
         output_data["saved_to"] = save_path
         
         print(json.dumps(output_data, ensure_ascii=False, indent=2))
 
-def run_single_search(analyzer, keyword, limit, min_views):
+def run_single_search(analyzer, keyword, limit, min_views, sheet_writer=None):
     # Reusing the previous logic for single search
     df = analyzer.find_giant_killing_videos(
         keyword, 
@@ -224,6 +240,11 @@ def run_single_search(analyzer, keyword, limit, min_views):
         df = df.sort_values(by='gk_score', ascending=False)
     
     top_df = df.head(limit)
+    
+    # Google Sheets 書き込み
+    if sheet_writer and not top_df.empty:
+        sheet_writer.append_results(top_df, keyword)
+    
     output_cols = ['title', 'gk_score', 'view_count', 'subscriber_count', 'published_at', 'duration_sec', 'video_id', 'channel_title', 'tags']
     output_cols = [c for c in output_cols if c in top_df.columns]
     result_data = top_df[output_cols].to_dict(orient='records')
