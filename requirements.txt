@@ -1,9 +1,0 @@
-google-api-python-client
-pandas
-streamlit
-python-dotenv
-isodate
-plotly
-tabulate
-gspread
-google-auth
