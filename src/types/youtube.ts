@@ -13,6 +13,7 @@ export interface VideoItem {
   researchDate: string;
   channelCountry?: string; // Debugging
   duration?: string; // ISO 8601 形式 (例: "PT1M30S")。ショート動画判定に使用
+  isShort?: boolean; // YouTube Shorts判定結果（複合ロジックで判定）
   // 算出指標
   likeRate: number;       // 高評価率 = likeCount / viewCount
   commentRate: number;    // コメント率 = commentCount / viewCount

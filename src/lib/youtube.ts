@@ -8,8 +8,81 @@ import {
 } from '@/types/youtube';
 import { filterDomesticVideos } from './filter';
 
-const API_KEY = process.env.YOUTUBE_API_KEY;
 const BASE_URL = 'https://www.googleapis.com/youtube/v3';
+
+/**
+ * 環境変数から全てのYouTube APIキーを収集する
+ * YOUTUBE_API_KEY, YOUTUBE_API_KEY_1, YOUTUBE_API_KEY_2, ... を自動検出
+ */
+function collectApiKeys(): string[] {
+  const keys: string[] = [];
+
+  // メインキー
+  if (process.env.YOUTUBE_API_KEY) {
+    keys.push(process.env.YOUTUBE_API_KEY);
+  }
+
+  // 番号付きキーを走査（1〜10）
+  for (let i = 1; i <= 10; i++) {
+    const key = process.env[`YOUTUBE_API_KEY_${i}`];
+    if (key && !key.includes('のキー')) { // プレースホルダーを除外
+      keys.push(key);
+    }
+  }
+
+  return keys;
+}
+
+const API_KEYS = collectApiKeys();
+let currentKeyIndex = 0;
+
+function getCurrentApiKey(): string {
+  if (API_KEYS.length === 0) {
+    throw new Error('YouTube API Key is not set');
+  }
+  return API_KEYS[currentKeyIndex];
+}
+
+/**
+ * APIキーフォールバック付きのaxios GETリクエスト
+ * 403（クォータ超過）発生時に次のキーへ自動切り替え
+ */
+async function apiGet(url: string, params: Record<string, any>): Promise<any> {
+  let lastError: any = null;
+  const triedKeys = new Set<number>();
+
+  while (triedKeys.size < API_KEYS.length) {
+    triedKeys.add(currentKeyIndex);
+    const apiKey = getCurrentApiKey();
+
+    try {
+      const response = await axios.get(url, {
+        params: { ...params, key: apiKey },
+      });
+      return response;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const reason = error?.response?.data?.error?.errors?.[0]?.reason;
+
+      // クォータ超過 or 認証エラー → 次のキーへフォールバック
+      if (status === 403 || status === 429) {
+        console.warn(
+          `⚠️ APIキー #${currentKeyIndex + 1} がクォータ超過 (${reason || status}). 次のキーへ切り替え...`
+        );
+        lastError = error;
+        currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+        continue;
+      }
+
+      // それ以外のエラーはそのままスロー
+      throw error;
+    }
+  }
+
+  // 全キー枯渇
+  console.error('🚨 全てのAPIキーがクォータ超過しています');
+  throw lastError || new Error('All YouTube API keys have exceeded their quota.');
+}
 
 /**
  * ISO 8601 duration (例: "PT1M30S") を秒数に変換する
@@ -39,7 +112,7 @@ export class YouTubeService {
     videoType: 'any' | 'normal' | 'shorts' = 'normal',
     channelId?: string
   ): Promise<VideoItem[]> {
-    if (!API_KEY) {
+    if (API_KEYS.length === 0) {
       throw new Error('YouTube API Key is not set');
     }
 
@@ -60,7 +133,6 @@ export class YouTubeService {
         order: 'relevance',
         maxResults: 50,
         ...(channelId ? { channelId } : {}),
-        key: API_KEY,
       };
 
       if (startDate) {
@@ -73,9 +145,7 @@ export class YouTubeService {
         searchParams.pageToken = nextPageToken;
       }
 
-      const searchResponse = await axios.get(`${BASE_URL}/search`, {
-        params: searchParams
-      });
+      const searchResponse = await apiGet(`${BASE_URL}/search`, searchParams);
 
       const items: YouTubeSearchResult[] = searchResponse.data.items || [];
       allSearchItems = allSearchItems.concat(items);
@@ -116,23 +186,17 @@ export class YouTubeService {
     const [videoResults, channelResults] = await Promise.all([
       Promise.all(
         videoBatches.map(batch =>
-          axios.get(`${BASE_URL}/videos`, {
-            params: {
-              part: 'statistics,contentDetails', // ★ contentDetails を追加（duration取得）
-              id: batch.join(','),
-              key: API_KEY,
-            }
+          apiGet(`${BASE_URL}/videos`, {
+            part: 'statistics,contentDetails', // ★ contentDetails を追加（duration取得）
+            id: batch.join(','),
           })
         )
       ),
       Promise.all(
         channelBatches.map(batch =>
-          axios.get(`${BASE_URL}/channels`, {
-            params: {
-              part: 'snippet,statistics',
-              id: batch.join(','),
-              key: API_KEY,
-            }
+          apiGet(`${BASE_URL}/channels`, {
+            part: 'snippet,statistics',
+            id: batch.join(','),
           })
         )
       ),
@@ -201,29 +265,62 @@ export class YouTubeService {
     });
 
     // ============================
-    // フェーズ4: 国内フィルタリング
+    // フェーズ4: Shorts判定（API情報のみ — 複合ロジック）
+    // ============================
+    // ※ _rawDescription が利用可能なこの段階で判定する
+    // （フェーズ5の国内フィルタで _rawDescription が削除されるため）
+    mappedItems.forEach(item => {
+      item.isShort = isShortByApiData(
+        item.duration || '',
+        item.title,
+        (item as any)._rawDescription || ''
+      );
+    });
+
+    // ============================
+    // フェーズ5: 国内フィルタリング
     // ============================
     const filteredItems = filterDomesticVideos(mappedItems);
 
     // ============================
-    // フェーズ5: 動画タイプに応じたフィルタリング（通常/ショート/すべて）
+    // フェーズ6: 動画タイプに応じたフィルタリング
     // ============================
-    const nonShortsItems = filteredItems.filter((item: VideoItem) => {
+    const typeFilteredItems = filteredItems.filter((item: VideoItem) => {
       if (videoType === 'any') return true;
-      if (!item.duration) return true; // duration情報がない場合は判定不能として残す
-
-      const seconds = parseDurationToSeconds(item.duration);
-      if (videoType === 'normal') {
-        return seconds > 60; // 60秒超の動画のみ残す
-      } else if (videoType === 'shorts') {
-        return seconds <= 60; // 60秒以下の動画のみ残す
-      }
+      if (videoType === 'normal') return !item.isShort;
+      if (videoType === 'shorts') return item.isShort === true;
       return true;
     });
 
     // ============================
-    // フェーズ6: 再生数降順ソート
+    // フェーズ7: 再生数降順ソート
     // ============================
-    return nonShortsItems.sort((a: VideoItem, b: VideoItem) => b.viewCount - a.viewCount);
+    return typeFilteredItems.sort((a: VideoItem, b: VideoItem) => b.viewCount - a.viewCount);
   }
+}
+
+// ============================
+// Shorts判定ヘルパー（API情報のみ — 複合ロジック）
+// ============================
+
+/**
+ * YouTube Data API v3 の情報のみでShorts判定。
+ *
+ * - > 180秒    → 通常動画（確定: Shorts上限は3分）
+ * - ≤ 60秒     → Shorts（確定: ほぼ全てのShortsはこの範囲）
+ * - 61〜180秒  → タイトル/説明文に #shorts タグがあればShorts
+ * - 61〜180秒 + タグなし → 通常動画（安全側: 誤除外を防ぐ）
+ */
+function isShortByApiData(
+  duration: string,
+  title: string,
+  description: string
+): boolean {
+  const seconds = parseDurationToSeconds(duration);
+  if (seconds === 0) return false;      // duration不明 → 安全側（通常動画扱い）
+  if (seconds > 180) return false;      // 180秒超 → 確実に非Shorts
+  if (seconds <= 60) return true;       // 60秒以下 → ほぼ確実にShorts
+  // 61〜180秒: タイトル/説明文に #shorts タグがあればShorts
+  const text = (title + ' ' + description).toLowerCase();
+  return /#shorts?\b/.test(text);
 }

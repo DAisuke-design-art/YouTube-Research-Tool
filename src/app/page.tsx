@@ -11,10 +11,23 @@ import { exportData } from '@/lib/export';
 
 registerLocale('ja', ja);
 
+/** ISO 8601 duration を "H:MM:SS" or "M:SS" 形式に変換 */
+function formatDuration(iso: string): string {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return '';
+  const h = parseInt(match[1] || '0', 10);
+  const m = parseInt(match[2] || '0', 10);
+  const s = parseInt(match[3] || '0', 10);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export default function Home() {
   const [query, setQuery] = useState('');
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [startDate, setStartDate] = useState<Date | null>(
+    () => new Date(Date.now() - 181 * 24 * 60 * 60 * 1000)
+  );
+  const [endDate, setEndDate] = useState<Date | null>(() => new Date());
   const [results, setResults] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,29 +39,28 @@ export default function Home() {
   const [channelId, setChannelId] = useState('');
   const [videoComments, setVideoComments] = useState<Record<string, any[]>>({});
   const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
+  const [minDuration, setMinDuration] = useState<number>(0); // 最低再生時間（秒）0=指定なし
 
   // ソート・ローカルフィルタ済み結果をメモ化
   const sortedResults = useMemo(() => {
     if (results.length === 0) return [];
 
-    // ローカルフィルタリング
+    // ローカルフィルタリング（isShortフラグ + 最低再生時間）
     const filtered = results.filter(item => {
-      if (displayFilter === 'all') return true;
-
-      let isShort = false;
-      if (item.duration) {
+      // 最低再生時間フィルタ
+      if (minDuration > 0 && item.duration) {
         const match = item.duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
         if (match) {
-          const hours = parseInt(match[1] || '0', 10);
-          const minutes = parseInt(match[2] || '0', 10);
-          const seconds = parseInt(match[3] || '0', 10);
-          const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-          isShort = totalSeconds <= 60;
+          const totalSeconds = parseInt(match[1] || '0', 10) * 3600
+            + parseInt(match[2] || '0', 10) * 60
+            + parseInt(match[3] || '0', 10);
+          if (totalSeconds < minDuration) return false;
         }
       }
-
-      if (displayFilter === 'normal') return !isShort;
-      if (displayFilter === 'shorts') return isShort;
+      // 表示タブフィルタ
+      if (displayFilter === 'all') return true;
+      if (displayFilter === 'normal') return !item.isShort;
+      if (displayFilter === 'shorts') return item.isShort === true;
       if (displayFilter === 'over-subscribers') return item.viewCount > item.subscriberCount;
       return true;
     });
@@ -67,7 +79,7 @@ export default function Home() {
           return 0;
       }
     });
-  }, [results, sortKey, displayFilter]);
+  }, [results, sortKey, displayFilter, minDuration]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,7 +88,8 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setShowExportMenu(false);
-    setDisplayFilter('all'); // 検索実行時は全表示タブに戻す
+    // 検索条件のvideoTypeに表示タブを連動させ、ユーザーの意図と表示の不整合を防止
+    setDisplayFilter(videoType === 'any' ? 'all' : videoType);
 
     try {
       let apiUrl = `/api/search?q=${encodeURIComponent(query)}&videoType=${videoType}`;
@@ -181,7 +194,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
         {/* Search Section */}
         <div className="bg-neutral-800 rounded-3xl shadow-xl border border-white/5 p-8 mb-12">
-          <form onSubmit={handleSearch} className="max-w-3xl mx-auto flex flex-col gap-6">
+          <form onSubmit={handleSearch} className="max-w-5xl mx-auto flex flex-col gap-6">
 
             <div className="flex flex-col gap-2">
               <label htmlFor="search" className="block text-sm font-medium text-gray-400 ml-1">
@@ -203,11 +216,11 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="flex flex-col gap-2">
-                <label className="block text-sm font-medium text-gray-400 ml-1 flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4" />
-                  期間フィルター（開始日）
+                <label className="block text-xs font-medium text-gray-400 ml-1 flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  開始日
                 </label>
                 <div className="relative">
                   <DatePicker
@@ -228,9 +241,9 @@ export default function Home() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="block text-sm font-medium text-gray-400 ml-1 flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4" />
-                  期間フィルター（終了日）
+                <label className="block text-xs font-medium text-gray-400 ml-1 flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  終了日
                 </label>
                 <div className="relative">
                   <DatePicker
@@ -251,19 +264,38 @@ export default function Home() {
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label className="block text-sm font-medium text-gray-400 ml-1 flex items-center gap-2">
-                  <Youtube className="w-4 h-4" />
+                <label className="block text-xs font-medium text-gray-400 ml-1 flex items-center gap-1.5">
+                  <Youtube className="w-3.5 h-3.5" />
                   動画タイプ
                 </label>
                 <select
                   value={videoType}
                   onChange={(e) => setVideoType(e.target.value as 'any' | 'normal' | 'shorts')}
-                  className="block w-full bg-neutral-900 text-white rounded-xl border border-white/10 shadow-inner focus:border-red-500/50 focus:ring-2 focus:ring-red-500/10 py-3 px-4 transition-all outline-none appearance-none"
+                  className="block w-full bg-neutral-900 text-white rounded-xl border border-white/10 shadow-inner focus:border-red-500/50 focus:ring-2 focus:ring-red-500/10 py-3 px-4 text-sm transition-all outline-none appearance-none"
                   style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundPosition: 'right 1rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em' }}
                 >
                   <option value="normal">通常動画のみ（ショート除外）</option>
                   <option value="any">すべての動画（ショート含む）</option>
                   <option value="shorts">ショート動画のみ</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="block text-xs font-medium text-gray-400 ml-1 flex items-center gap-1.5">
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  最低再生時間
+                </label>
+                <select
+                  value={minDuration}
+                  onChange={(e) => setMinDuration(Number(e.target.value))}
+                  className="block w-full bg-neutral-900 text-white rounded-xl border border-white/10 shadow-inner focus:border-red-500/50 focus:ring-2 focus:ring-red-500/10 py-3 px-4 text-sm transition-all outline-none appearance-none"
+                  style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundPosition: 'right 1rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em' }}
+                >
+                  <option value={0}>指定なし</option>
+                  <option value={60}>1分以上</option>
+                  <option value={180}>3分以上</option>
+                  <option value={300}>5分以上</option>
+                  <option value={600}>10分以上</option>
+                  <option value={1200}>20分以上</option>
                 </select>
               </div>
             </div>
@@ -421,6 +453,11 @@ export default function Home() {
                       alt={video.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
+                    {video.duration && (
+                      <span className="absolute bottom-2 right-2 z-20 px-1.5 py-0.5 rounded bg-black/80 text-white text-xs font-mono font-medium tracking-wide">
+                        {formatDuration(video.duration)}
+                      </span>
+                    )}
                   </div>
                   <div className="p-6 flex-1 flex flex-col relative z-20 -mt-6">
                     <h3 className="font-bold text-lg leading-snug mb-2 line-clamp-2 text-white group-hover:text-red-400 transition-colors drop-shadow-md">
