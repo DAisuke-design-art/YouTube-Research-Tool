@@ -181,7 +181,7 @@ export default function Home() {
             <div className="flex items-center space-x-3">
               <Youtube className="w-9 h-9 text-red-500" />
               <h1 className="text-2xl font-black tracking-tight text-white">
-                YouTube Research Tool V2
+                YouTube Research Tool
               </h1>
               <span className="ml-3 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
                 JP Only
