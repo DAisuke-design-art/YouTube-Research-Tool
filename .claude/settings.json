@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Bash(xargs:*)",
+      "Bash(jq:*)"
+    ]
+  }
+}

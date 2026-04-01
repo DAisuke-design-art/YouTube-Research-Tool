@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 !.env.example
+
+# Google OAuth認証情報（シークレット含む。Git追跡禁止）
+Google_Drive/client_secret_*.json
+Google_Drive/gdrive_token.json
