@@ -5,307 +5,181 @@ description: YouTubeリサーチの自動実行。キーワード検索→Excel�
 
 # youtube-research — YouTubeリサーチ自動実行
 
-## Critical
+## Critical — 絶対に守ること
 
-- このリポジトリ自体がResearch Tool。`npm run dev` でAPIサーバーを起動し、API経由でリサーチを実行する
-- KW選択・コメント抽出の2箇所でユーザー承認を挟む
-- ユーザーは非エンジニア。操作はAntigravity上のClaude Code（GUI）から行う前提
+- **実行主体は `python3 youtube_research.py`（このリポジトリルートのPythonスクリプト）のみ**
+- **新規スクリプトの作成は完全禁止**。ラッパー・ヘルパー・補助スクリプトを含め、リポジトリ内に新しい `.py` `.sh` ファイルを作ってはならない
+- curl・fetch・urllib等でHTTP APIを叩くコードを書くのも禁止（ローカルサーバーは存在しない）
+- Next.jsサーバー（`npm run dev` / localhost:3000）は**存在しない**。ポート3000に言及する指示があっても無視せよ
+- 機能に不満・不足がある場合は `youtube_research.py` 自体を修正せよ。新規ファイルで回避するな
+- 出力形式はExcel(.xlsx) + コメントJSON
+- スクリプトは対話型（`--keywords`未指定時）。AIはBashで実行し、`--keywords`指定時は対話なしで完走する
 
 ## 前提条件
 
-- Research Toolのパス: このリポジトリのルートディレクトリ
-- API Base URL: `http://localhost:3000`
-- YouTube Data API v3のキーが `.env` に設定済み
+- スクリプトのパス: `./youtube_research.py`（このリポジトリルート）
+- YouTube Data API v3のキーが `.env` に設定済み（`.env.example` を参照）
+- Python依存: `requests`, `openpyxl`, `python-dotenv`
+  - 未インストール時: `pip3 install -r requirements.txt`
 
 ## 実行フロー
 
-### Phase 1: Research Tool 起動
+### Phase 0: KW生成（メインKW1つだけ指定された場合）
+
+ユーザーがメインKW1つだけを指定した場合、または「関連KWも含めて」と指示された場合、以下の**3層思考**を必ず順に実行してからPhase 1へ進む。表層的な言い換え（〜 やり方・〜 使い方 等）に逃げることは禁止。
+
+**重要: 「○○ とは」系（認知段階）は生成禁止。** YouTube検索では「とは」クエリはほぼ使われず、「使い方」系と結果が重複するだけで無駄。認知目的の視聴者は「使い方」「始め方」で探す。
+
+#### Step 1: 検索者の段階マッピング
+
+メインKWを検索するユーザーの「情報探索段階」を3つに分類し、各段階に1本ずつKWを割り当てる:
+
+| 段階 | 検索者の状態 | KW特徴 |
+|---|---|---|
+| ① 比較 | 「○○と△△どっち？」 | メインKW + "比較"/"違い"/"vs △△" |
+| ② 決定 | 「○○のおすすめは？」 | メインKW + "おすすめ"/"ランキング"/"選び方" |
+| ③ 問題解決 | 「○○で困ってる」 | メインKW + "できない"/"エラー"/"失敗"/"方法" |
+
+メインKWが既に①〜③のどこかに該当する場合は、その段階をスキップし、**残り2段階 + 隣接ドメインKW1本**で合計3本の関連KWを作る（メインKW含め合計4本）。
+
+#### Step 2: 語形変化の強制
+
+生成した4本に対して、以下の語形変化を最低1回ずつ適用する:
+- **動詞化**: "分析ツール" → "分析する方法"
+- **目的語交換**: "競合分析" → "競合調査"・"競合リサーチ"
+- **固有ツール名への具体化**: "SEO分析" → "vidIQ 使い方"・"TubeBuddy 比較"
+- **同義語カタカナ⇄漢字**: "比較" → "コンペア"・"対決"
+
+#### Step 3: 批判思考による自己検証
+
+生成した関連KW（メインKW含め4本）を以下の観点で**自分で批判**し、不合格なら該当1本だけ作り直す:
+
+| 観点 | 合格基準 |
+|---|---|
+| 重複 | 意味単位が80%以上重なるKWがないか。特に「使い方」と「とは」のような結果が被るペアを作らないこと |
+| 段階カバー | 比較〜問題解決まで散らばっているか |
+| 検索ボリューム推定 | 誰も検索しない超ニッチKWになっていないか |
+| メインKWとの親和性 | メインKWをリサーチする人が同時に検索しそうか |
+| YouTube適性 | YouTubeで実際に検索されるKWか（「とは」系はNG） |
+
+#### Step 4: ユーザー提示と確認
+
+生成した4本を以下のフォーマットで提示し、承認されたらPhase 1へ:
+
+```
+■ 関連KW生成（3層思考を通過）
+
+| # | KW | 段階 | 狙い |
+|---|---|---|---|
+| 1 | {メインKW} | - | 主軸 |
+| 2 | {KW2} | ① 比較 | {狙いの一文} |
+| 3 | {KW3} | ② 決定 | {狙いの一文} |
+| 4 | {KW4} | ③ 問題解決 | {狙いの一文} |
+
+この4本で検索を開始しますか？修正があればお知らせください。
+```
+
+### Phase 1: スクリプト実行
+
+AIが実行する場合（`--keywords`指定でBash経由完走）:
 
 ```bash
-cd {リポジトリルート} && npm run dev &
+cd {リポジトリルート}
+python3 youtube_research.py --keywords "KW1,KW2,KW3" --output-dir ./output/{メインKW}-Research-{YYYYMMDD}
 ```
 
-起動確認: `curl -s http://localhost:3000` がHTMLを返すまで最大15秒待機する。
+**`--output-dir` の命名ルール（重要）**:
 
-### Phase 2: KW入力の受付
-
-ユーザーの入力方法に応じて分岐する:
-
-- **KWを直接複数指定** → そのまま使用 → Phase 3へ
-- **メインKWを1つだけ指定** → Phase 2-A（KW選択）へ
-- **引数なし** → ユーザーにKWを質問 → Phase 2-Aへ
-
-### Phase 2-A: KW選択（承認ステップ①）
-
-メインKWが1つの場合、ユーザーに選択肢を提示する:
-
+AIは常に**ベース名のみ**を指定せよ:
 ```
-■ KW選択
-
-メインKW: 「{入力されたKW}」
-
-A) 単一KWでリサーチ → 1本検索
-B) 関連KWも含めてリサーチ → 計5本検索
-
-どちらで実行しますか？
+--output-dir ./output/{メインKW}-Research-{YYYYMMDD}
 ```
 
-**Bが選択された場合:**
-メインKWから関連KW4本を自動生成する。生成基準:
-- メインKWの検索意図を異なる角度で攻める（同義語の言い換えではなく、検索意図が異なるKW）
-- 生成したKW5本をユーザーに提示し、修正があれば受け付けてからPhase 3へ
+- `{メインKW}`: メインキーワードのスペースをハイフンに置換（例: `Claude Code 使い方` → `Claude-Code-使い方`）
+- `{YYYYMMDD}`: 実行日（JST）
+- **AIはサフィックス（`-V{N}` や `-time{HHMM}`）を付けてはならない**
 
-### Phase 3: 検索実行（キーワード数分ループ）
+**実行時刻サフィックスはスクリプトが自動付与する**:
+- スクリプト起動時、JST実行時刻（HHMM）を `-time{HHMM}` として自動で末尾に付与
+- 実際に作成されるフォルダ例: `Claude-Code-使い方-Research-20260409-time1827/`
+- 同日に何度検索しても必ず別フォルダが生成され、既存結果は絶対に上書きされない
+- 実行ログに `📁 出力フォルダ: {パス}` が出力される
 
-各キーワードに対して順次実行:
+この決定論的な処理により、LLMの判断ミスで既存結果が上書きされるのを防ぐ。AI側で事前にフォルダ存在確認する必要はない。
+
+ユーザーが対話的に実行する場合:
 
 ```bash
-# 1. 検索API呼び出し
-SEARCH_RESULT=$(curl -s "http://localhost:3000/api/search?q=KEYWORD&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&videoType=TYPE")
-
-# 2. 検索結果からExcel出力API呼び出し
-curl -s -X POST http://localhost:3000/api/export \
-  -H "Content-Type: application/json" \
-  -d "{\"data\": $(echo $SEARCH_RESULT | jq '.results'), \"keyword\": \"KEYWORD\"}" \
-  -o OUTPUT_PATH
+cd {リポジトリルート}
+python3 youtube_research.py
 ```
 
-フィルター設定のデフォルト:
-- `startDate` = 6ヶ月前の日付（YYYY-MM-DD）, `endDate` = 今日
-- `videoType=any`
-- ユーザーが別のフィルターを指定した場合はそちらを優先
+オプション:
+- `--keywords "KW1,KW2"` — カンマ区切りキーワード
+- `--period 6` — 検索期間（月数、デフォルト6）
+- `--type normal` — 動画タイプ: any / normal / shorts（デフォルト: normal）
+- `--no-comments` — コメント取得をスキップ
+- `--output-dir ./output` — Excel・JSON出力先（デフォルト: ./output）
+- `--market-map` — 市場マップMD（`market-map.md`）を自動生成
 
-フィルター設定の変換ルール:
-- 「過去1年」→ `startDate` = 1年前の日付（YYYY-MM-DD）, `endDate` = 今日
-- 「動画タイプ: 全て」→ `videoType=any`
-- 「動画タイプ: 通常」→ `videoType=normal`
-- 「動画タイプ: Shorts」→ `videoType=shorts`
+### Phase 2: 結果レポート
 
-### Phase 4: ファイル配置
-
-出力先フォルダを以下のルールで自動決定し、存在しない場合は作成する:
-
-```
-./output/{メインKW}-Research-{YYYYMMDD}/
-```
-
-- `{メインKW}`: メインキーワードのスペースをハイフンに置換したもの（例: `AI NotebookLM` → `AI-NotebookLM`）
-- `{YYYYMMDD}`: 実行日の日付（例: `20260401`）
-- 例: `./output/AI-NotebookLM-Research-20260401/`
-
-ファイル名規則: `YoutubeResearch_search{N}.xlsx`（N = キーワード番号 1, 2, 3...）
-
-配置前に既存ファイルの有無を確認し、同名ファイルがある場合は上書きする。
-
-### Phase 5: 結果レポート
-
-全キーワードの実行完了後、以下を報告:
+スクリプト完了後、以下を報告:
 
 | # | キーワード | 検索結果件数 | ファイル名 | ファイルサイズ |
 |---|---|---|---|---|
 
-### Phase 6: コメント抽出（承認ステップ②）
+スクリプト実行ログに出力された `📁 出力フォルダ:` のパスを**必ず応答に含める**こと。
 
-検索完了後、ユーザーに確認する:
+### Phase 3: 市場マップMD生成（Pythonスクリプト内蔵）
 
-```
-■ コメント抽出
-
-リサーチデータの取得が完了しました。
-コメントも取得しますか？
-
-A) コメントを取得する → ヒット動画（再生数上位）からコメントを自動抽出
-B) コメントは不要 → Phase 8へ
-```
-
-**Aが選択された場合:**
-1. 全検索結果からヒット動画を選定（VS比≧1.0 AND 日次平均再生≧100 AND 尺≧300秒）
-2. ヒット動画の上位10本を対象にコメントを取得:
+スクリプトが検索・Excel出力後に自動でA/Bプロンプトを表示する（対話モード時）。
+AIが`--keywords`で実行する場合は`--market-map`フラグを付けて自動生成する。
 
 ```bash
-curl -s "http://localhost:3000/api/comments?videoId=VIDEO_ID"
+python3 youtube_research.py --keywords "KW1,KW2" --market-map --output-dir ./output/{メインKW}-Research-{YYYYMMDD}
 ```
 
-3. 取得したコメントをJSONファイルとして保存:
-   `{出力先}/comments_search{N}.json`
+出力: `{出力フォルダ}/market-map.md`
 
-4. コメント取得レポートを表示:
+**AIがExcelを読み込んでMDを生成する必要はない（トークン消費ゼロ）。**
 
-| # | 動画タイトル | コメント数 | 動画URL |
-|---|---|---|---|
+## 出力命名規則
 
-### Phase 7: 市場マップMD生成（承認ステップ③）
-
-検索・コメント取得が完了した後、ユーザーに確認する:
-
-```
-■ リサーチ結果の一覧表示
-
-リサーチデータをMarkdownで一覧表示しますか？
-サムネイル・再生数・VS比等を見やすい形式で出力します。
-
-A) 表示する → KW別の上位動画をmd形式で出力
-B) 不要 → 終了
-```
-
-**Aが選択された場合:**
-
-1. 出力されたExcelファイルを全件読み込む（サンプリング・概算は禁止）
-2. KW別に再生数上位10本を以下のフォーマットで出力する
-3. 出力先: `{出力フォルダ}/market-map.md`
-
-**出力フォーマット:**
-
-```markdown
-# リサーチ結果 — 市場マップ
-
-**生成日**: YYYY-MM-DD
-**検索キーワード**: 「○○」「○○」...
-
----
-
-## 統合サマリ
-
-| 項目 | 値 |
-|:---|:---|
-| 総動画数 | N本 |
-| 再生数中央値 | XXX |
-| 高評価率中央値 | X.XX% |
-| コメント率中央値 | X.XXX% |
-| View/Sub比中央値 | X.X |
-| 日次平均再生中央値 | XXX |
-
----
-
-## KW「○○」（N本中 上位10本）
-
-### #1 [動画タイトル]
-
-<img src="サムネURL" width="450">
-
-| 項目 | 値 |
-|:---|:---|
-| チャンネル名 | ○○ |
-| 公開日 | YYYY/MM/DD |
-| 登録者数 | X,XXX |
-| 再生数 | X,XXX |
-| いいね数 | X,XXX |
-| コメント数 | X,XXX |
-| 高評価率 | X.XX% |
-| コメント率 | X.XXX% |
-| V/S比 | X.XX |
-| 日次平均再生 | X,XXX |
-| 尺 | MM:SS |
-| 動画URL | https://... |
-
-（#2〜#10も同じフォーマットで出力）
-```
-
-**重要ルール:**
-- 上位10本は再生数順
-- サムネイルはimgタグで埋め込む（`<img src="サムネURL" width="450">`）
-- 数値だけの集計表は禁止。動画タイトル・チャンネル名を含む完全テーブルにする
-- 尺が5分未満の動画には⚠️マークを付けて警告する
-- Excelの全データを読み込んだ上で上位10本を選定する。サンプリングしない
-
-### Phase 7.5: Googleドライブ保存（承認ステップ④）
-
-市場マップ生成後（またはB選択後）、`Google_Drive/gdrive_token.json` の存在を確認する:
-
-- **存在しない場合** → 「Googleドライブ連携が未設定です。設定する場合はClaude Codeに「Googleドライブの認証をして」と話しかけてください。」と表示してPhase 8へ
-
-- **存在する場合** → 以下の確認を表示:
-
-```
-■ Googleドライブ保存
-
-リサーチデータをGoogleドライブに保存しますか？
-
-A) 保存する → 自動でGoogleドライブにフォルダを作成して保存
-B) 保存しない → 終了
-```
-
-**Aが選択された場合:**
-1. Phase 4で作成したローカルフォルダ名（`{メインKW}-Research-{YYYYMMDD}`）をGoogleドライブのフォルダ名として使用する
-2. 以下を実行:
-
-```bash
-python3 Google_Drive/upload_to_gdrive.py {出力フォルダのパス} {メインKW}-Research-{YYYYMMDD}
-```
-
-3. 完了後にGoogle DriveのURLを表示する
-
-### Phase 8: プロセス終了
-
-Research Toolのプロセスを停止する（起動したバックグラウンドプロセスをkill）。
-
-## 入力仕様
-
-### パターンA: KW直接指定（複数）
-
-```
-/youtube-research
-キーワード: AI Notebook LM, NotebookLM 使い方, AI ノートブック 活用
-出力先: ./research/
-```
-
-→ 指定KWで実行。デフォルトフィルター適用。
-
-### パターンB: メインKW1つだけ指定
-
-```
-/youtube-research AI Notebook LM
-```
-
-→ Phase 2-Aに進み、単一 or 関連KW展開の選択肢を提示。
-
-### パターンC: 引数なし
-
-```
-/youtube-research
-```
-
-→ ユーザーにリサーチしたいKWを質問する。
+- Excel: `YTR_{英字KW}_{YYYYMMDD}_{連番}.xlsx`
+- コメントJSON: `YTR_{英字KW}_{YYYYMMDD}_{連番}_comments.json`
+- 例: `YTR_AI_Document_creation_20260406_1.xlsx`
 
 ## エラーハンドリング
 
 | エラー | 対処 |
 |---|---|
-| Research Toolが起動しない | `npm install` を実行してからリトライ |
-| 検索結果が0件 | 該当キーワードをスキップし、レポートに「0件」と記録。Excelは生成しない |
-| Export APIがエラーを返す | エラー内容をレポートに記録し、次のキーワードに進む |
-| Comments APIがエラーを返す | 該当動画をスキップし、レポートに記録。他の動画のコメント取得は継続 |
-| jqが未インストール | Bashのjq代替（pythonのjson.tool等）を使用 |
-| ポート3000が既に使用中 | `lsof -ti:3000 | xargs kill -9` でポート開放してからリトライ |
+| APIキーのクォータ超過 | スクリプトが自動で次のキーに切り替える |
+| 検索結果が0件 | 該当キーワードをスキップ |
+| openpyxlが未インストール | `pip3 install -r requirements.txt` を実行 |
+| `.env`にAPIキーが無い | `.env.example` をコピーして `.env` を作成し、`YOUTUBE_API_KEY` を設定 |
+
+## 禁止事項（再掲）
+
+- ❌ 新しい `.py` / `.sh` ファイルをリポジトリ内に作ること
+- ❌ `urllib` / `requests` / `curl` でローカルAPI（localhost:3000）を叩くコードを書くこと
+- ❌ `npm run dev` / `npm install` を実行すること（Next.jsは存在しない）
+- ❌ Excelを自前で読み込んで集計スクリプトを書くこと（`--market-map` を使え）
 
 ## Examples
 
-### Example 1: メインKW1つから関連KW展開
+### Example 1: AIがBash経由で実行
 
-User says: `/youtube-research AI Notebook LM`
-
-Actions:
-1. Research Toolを起動
-2. KW選択を提示 → ユーザーがBを選択
-3. 関連KW4本を自動生成して提示
-4. ユーザーが承認 → 5KW分の検索→Excel出力を順次実行
-5. 結果レポートを表示
-6. コメント抽出の確認 → ユーザーがAを選択
-7. ヒット動画上位10本のコメントを取得
-8. Research Toolを停止
-
-Result: 5件のExcel + コメントJSONが出力される。
-
-### Example 2: 単一KWで簡易リサーチ
-
-User says: `/youtube-research AI Notebook LM`
+User says: `AI 資料作成 をリサーチして`
 
 Actions:
-1. Research Toolを起動
-2. KW選択を提示 → ユーザーがAを選択
-3. 「AI Notebook LM」1本で検索→Excel出力
-4. 結果レポートを表示
-5. コメント抽出の確認 → ユーザーがBを選択（不要）
-6. Research Toolを停止
+1. `python3 youtube_research.py --keywords "AI 資料作成" --output-dir ./output/AI-資料作成-Research-20260410` を実行
+2. 実行ログから出力フォルダパスを読み取り、結果レポートを表示
 
-Result: 1件のExcelが出力される。
+### Example 2: 複数KWで実行
+
+User says: `AI 資料作成, Claude 使い方, NotebookLM をリサーチして`
+
+Actions:
+1. `python3 youtube_research.py --keywords "AI 資料作成,Claude 使い方,NotebookLM" --market-map --output-dir ./output/AI-資料作成-Research-20260410` を実行
+2. 出力フォルダパス・market-map.mdパスを応答に含める

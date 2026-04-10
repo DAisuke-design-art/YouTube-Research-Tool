@@ -1,73 +1,105 @@
 # YouTube Research Tool
 
-YouTube Data API v3 を活用し、特定のキーワードや条件に基づいて動画を分析・リサーチするための強力なツールです。Next.js (App Router) をベースに構築されています。
+YouTube Data API v3 を活用し、キーワードから動画データを一括リサーチ・Excel出力・コメント抽出・市場マップ生成までを**Python単体スクリプト**で実行するツールです。
 
 ## 特徴
-- YouTube Data API v3 を利用した高度な検索とデータ抽出
-- 再生数、エンゲージメント率の算出
-- コメントデータの抽出とExcel出力
-- AntigravityなどのAIアシスタントに最適化されたコードベース
+- Python単体で動作（Next.jsサーバー不要）
+- YouTube Data API v3 による高精度なキーワード検索
+- 再生数・エンゲージメント率・日次平均再生・V/S比を自動算出
+- Excel(.xlsx) 出力（行1固定・赤ヘッダーで視認性確保）
+- 上位ヒット動画のコメント自動抽出（JSON出力）
+- 市場マップMD（`market-map.md`）の自動生成
+- AntigravityなどのAIアシスタントから `/youtube-research` で一発実行
 
 ---
 
 ## ⚡ 超高速セットアップ (プログラミング未経験者・非エンジニア向け)
 
-このツールは、**「黒い画面」や「難しいコマンド」を一切使わず、すべてマウス操作とAI（Antigravity等）におまかせ**で動かすことができます。
+このツールは、**AI（Antigravity等）におまかせ**で動かすことができます。
 
-### Step 1: ツール一式を「ZIP」でダウンロードする
-1. この画面の右上にある緑色の **`<> Code ▾`** というボタンをクリックします。
-2. 一番下にある **`Download ZIP`** をクリックします。
-3. パソコンにダウンロードされたZIPファイルをダブルクリックして解凍（展開）します。
+### Step 1: ツール一式をダウンロード
+1. この画面の右上にある緑色の **`<> Code ▾`** ボタンをクリック
+2. 一番下の **`Download ZIP`** をクリック
+3. ダウンロードされたZIPファイルを解凍
 
 ### Step 2: YouTube Data API v3 キーの取得
-1. [Google Cloud Console](https://console.cloud.google.com/) にアクセスし、新しいプロジェクトを作成します。
-2. 「APIとサービス」 > 「ライブラリ」から **YouTube Data API v3** を検索し、有効化します。
-3. 「認証情報」タブから「認証情報を作成」>「APIキー」を選択し、キーをコピーします。
+1. [Google Cloud Console](https://console.cloud.google.com/) にアクセスし、新しいプロジェクトを作成
+2. 「APIとサービス」 > 「ライブラリ」から **YouTube Data API v3** を検索し、有効化
+3. 「認証情報」タブから「認証情報を作成」>「APIキー」を選択し、キーをコピー
 
-### Step 3: 環境変数の準備 (APIキーを手動で貼る)
-⚠️ **APIキーをAIのチャット欄に直接貼り付けないでください。** （セキュリティ保護機能でエラーになります）
+### Step 3: 環境変数の準備
+⚠️ **APIキーをAIのチャット欄に直接貼り付けないでください。**
 
-1. Step 1 で解凍したフォルダを開きます。
-2. その中にある `.env.example` をコピーして、名前を `.env` に変更します。
-3. 作った `.env` ファイルをメモ帳などで開き、Step 2 でコピーしたAPIキーを `YOUTUBE_API_KEY=` の右側に貼り付けて保存します。
-   - 💡 **複数のAPIキーを設定すると、1つのキーの利用上限に達しても自動で次のキーに切り替わります。** 2つ目以降のキーを追加する場合は `YOUTUBE_API_KEY_1=`, `YOUTUBE_API_KEY_2=` の行のコメント（`#`）を外してキーを記入してください。
+1. Step 1 で解凍したフォルダを開く
+2. `.env.example` をコピーして `.env` にリネーム
+3. `.env` をメモ帳などで開き、`YOUTUBE_API_KEY=` の右側にAPIキーを貼り付け保存
+   - 💡 複数のAPIキー設定でクォータ超過時の自動切替が可能。`YOUTUBE_API_KEY_1=`, `YOUTUBE_API_KEY_2=` のコメントを外して記入
 
 ### Step 4: AI（Antigravity）への丸投げ
-1. Antigravity または Cursor などのAIアシスタントを起動します。
-2. AIの画面内に、**Step 1 で解凍したフォルダごとマウスでドラッグ＆ドロップ** して読み込ませます。
-3. 以下のプロンプト（指示文）をそのままAIのチャットに送信してください。
+1. Antigravity を起動
+2. 解凍フォルダをAntigravity画面にドラッグ＆ドロップ
+3. 以下のプロンプトをそのまま送信:
 
-> 「フォルダ内に`.env` ファイルを作成し、APIキーを設定済みです。このプロジェクトを実行するために必要なパッケージのインストール (`npm install`) を行って、ローカルサーバー (`npm run dev`) を起動してください。ブラウザで確認できるようにしてね。」
+> 「このプロジェクトの依存パッケージをインストールして（`pip3 install -r requirements.txt`）、次に `/youtube-research` でリサーチを開始してください。」
 
-**🎉 これで完了です！**
-あとはAIが自動で環境を構築し、ツールを起動してくれます。
-画面に表示される `http://localhost:3000` をクリックして使い始めましょう。
+**🎉 完了です。** AIがパッケージをインストールし、`/youtube-research` スキルがキーワード入力から結果出力までを自動実行します。
+
+出力先: `./output/{メインKW}-Research-{YYYYMMDD}-time{HHMM}/`
 
 ---
 
-## 手動でセットアップする場合 (エンジニア向け)
-
-AIを使用せず、手動で環境構築を行いたい場合は以下の手順に従ってください。
+## 手動セットアップ（エンジニア向け）
 
 ### 1. 環境変数の設定
-リポジトリ直下の `.env.example` をコピーして `.env` ファイルを作成し、ご自身のAPIキーを記載してください。
 
 ```bash
 cp .env.example .env
 ```
 
 **.env**
-```env
-YOUTUBE_API_KEY=あなたのAPIキーをここに貼り付け
+```
+YOUTUBE_API_KEY=your_api_key_here
 ```
 
-### 2. 依存関係のインストールと起動
+### 2. Python依存パッケージのインストール
+
 ```bash
-npm install
-npm run dev
+pip3 install -r requirements.txt
 ```
 
-`http://localhost:3000` にアクセスしてツールを使用開始できます。
+必要パッケージ: `requests`, `openpyxl`, `python-dotenv`
+
+### 3. 実行
+
+対話モード（キーワードを対話で入力）:
+```bash
+python3 youtube_research.py
+```
+
+AI実行モード（キーワード指定で完走）:
+```bash
+python3 youtube_research.py --keywords "AI 資料作成,Claude 使い方" --market-map
+```
+
+主要オプション:
+- `--keywords "KW1,KW2"` — カンマ区切りキーワード
+- `--period 6` — 検索期間（月数、デフォルト6）
+- `--type normal` — 動画タイプ: any / normal / shorts（デフォルト: normal）
+- `--no-comments` — コメント取得をスキップ
+- `--market-map` — 市場マップMD (`market-map.md`) を自動生成
+- `--output-dir ./output` — 出力先（デフォルト: `./output`、スクリプトが日時サフィックスを自動付与）
+
+---
+
+## 出力物
+
+実行後、`./output/{メインKW}-Research-{YYYYMMDD}-time{HHMM}/` 配下に以下が生成されます:
+
+| ファイル | 内容 |
+|---|---|
+| `YTR_{KW}_{日付}_{連番}.xlsx` | キーワード別検索結果（再生数・VS比・尺等の全メトリクス） |
+| `YTR_{KW}_{日付}_{連番}_comments.json` | ヒット動画のコメント抽出結果 |
+| `market-map.md` | KW別上位10本の市場マップ（`--market-map`指定時） |
 
 ---
 

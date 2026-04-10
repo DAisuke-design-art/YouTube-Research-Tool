@@ -4,36 +4,36 @@
 
 ## リポジトリの目的
 
-YouTube Data API v3を使ったリサーチツール。キーワード検索→動画分析→Excel出力→コメント抽出を一括で行う。
+YouTube Data API v3を使ったリサーチツール。キーワード検索→動画分析→Excel出力→コメント抽出→市場マップ生成を、**Python単体スクリプト**で一括実行する。
 
 ## 操作環境
 
 ユーザーはAntigravity上のClaude Code（GUI）から操作する。非エンジニア前提。
 
-## API仕様
+## Critical — 実行ルール
 
-ローカルサーバー起動後、以下のAPIが利用可能:
-
-| エンドポイント | メソッド | 用途 |
-|---|---|---|
-| `/api/search?q=KW&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&videoType=any` | GET | キーワード検索 |
-| `/api/export` | POST | 検索結果をExcelに出力（bodyにdata + keyword） |
-| `/api/comments?videoId=VIDEO_ID` | GET | 動画コメント取得（最大2000件） |
+- **実行主体は `python3 youtube_research.py` のみ**
+- **新規スクリプトの作成は完全禁止**。`run_research.py` `get_hit_videos.py` 等のラッパー・ヘルパーを作ってはならない
+- **Next.jsサーバーは存在しない**。`npm run dev` `npm install` `curl http://localhost:3000/...` は全て禁止
+- **`urllib` / `requests` / `curl` でローカルAPIを叩くコードを書くな**
+- 機能に不満がある場合は `youtube_research.py` 自体を修正せよ
 
 ## スキル一覧
 
 | スキル | 呼び出し | 用途 |
 |---|---|---|
-| youtube-research | `/youtube-research` | キーワード検索→Excel出力→コメント抽出を一括自動実行 |
+| youtube-research | `/youtube-research` | キーワード検索→Excel出力→コメント抽出→市場マップを一括自動実行 |
+
+詳細は `.claude/skills/youtube-research/SKILL.md` を参照。
 
 ## セットアップ
 
 1. `.env.example` をコピーして `.env` を作成
 2. YouTube Data API v3のキーを `.env` に設定
-3. `npm install` → `npm run dev` でサーバー起動
-4. `http://localhost:3000` でGUIアクセス可能
+3. Python依存パッケージをインストール: `pip3 install -r requirements.txt`
+4. 実行: `python3 youtube_research.py --keywords "AI 資料作成"`
 
-## Googleドライブ連携
+## Googleドライブ連携（任意）
 
 ユーザーが「Googleドライブの認証をして」と言ったら、以下を実行する:
 
@@ -46,4 +46,5 @@ python3 Google_Drive/auth_gdrive.py
 ## 運用ルール
 
 - `.env` ファイルはGitにコミットしない（APIキーを含むため）
-- ポート3000が使用中の場合: `lsof -ti:3000 | xargs kill -9` で開放
+- 出力先は `./output/` 配下。スクリプトが `{メインKW}-Research-{YYYYMMDD}-time{HHMM}/` 形式で自動命名する
+- 同日に何度実行しても別フォルダが生成され、既存結果を上書きしない
